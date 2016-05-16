@@ -1,6 +1,7 @@
 module appstore
 
 open util/ordering[Time]
+
 -------------------------- ASSINATURAS --------------------------
 
 sig Time {}
@@ -8,17 +9,23 @@ sig Time {}
 
 one sig Loja {
 	aplicativos: some Aplicativo,
-	usuarios: set Usuario
+	usuarios: some Usuario
 }
 
-abstract sig Aplicativo {}
+abstract sig VersaoDoApp{}
+one sig Atual, Antiga extends VersaoDoApp{}
+
+abstract sig Aplicativo {
+	versao: VersaoDoApp one -> Time,
+}
+
 sig AplicativoPago extends Aplicativo{}
 sig AplicativoGratis extends Aplicativo{}
 
 sig Conta {
 	cartoes : set Cartao,
-	dispositivos: some Dispositivo,
-	aplicativosassociados: set Aplicativo -> Time
+	dispositivos: set Dispositivo,
+	aplicativosassociados: set Aplicativo  -> Time
 }
 
 sig Usuario{
@@ -26,61 +33,58 @@ sig Usuario{
 }
 
 sig Dispositivo{
-	status : one Status,
-	apps : status -> Aplicativo -> Time, 
-	//aplicativosinstalados : some Aplicativo
+
+	apps : Status -> Aplicativo -> Time, 
 }
 
-one sig Cartao {
+sig Cartao {
 
 }
-
 
 abstract sig Status{}
-one sig Instalado extends Status{}
-one sig NaoInstalado extends Status{}
-
+one sig Instalado, NaoInstalado extends Status{}
 
 -------------------------- FATOS --------------------------
 
+fact resumindo {
+#Cartao = 1
+}
+
 fact Usuario {	
 	// Todo usuario tem zero ou uma conta
-	all usuario: Usuario | #(usuario.contas) =< 1
+	all usuario: Usuario | #(usuario.contas) <=1
 	// Todo usuario estar na Loja
 	all usuario: Usuario | usuario in Loja.usuarios
 }
 
 fact Loja{
-	// Toda Loja tem Aplicativos
+	// Toda Loja tem pelo menos um Aplicativo
 	all loja: Loja | some loja.aplicativos
 }
 
 fact Aplicativo {
-	
-	// Todo aplicativo no dispositivo o status é instalado
-	all a: Aplicativo, d: Dispositivo, s: Status, t: Time | a in s.(d.apps).t <=> s = Instalado
 
-	// Todo aplicativo instalado estar associado a uma conta de aplicativosassociados
-	all a: Aplicativo, d: Dispositivo, s: Status, t: Time | a in s.(d.apps).t => a in d.~dispositivos.aplicativosassociados.t
+	// Todo aplicativo no dispositivo o status é instalado e pertence a uma conta associada
+	all aplicativo: Aplicativo, dispositivo: Dispositivo, status: Status, time: Time | 
+	aplicativo in status.(dispositivo.apps).time => status = Instalado
+	and aplicativo in dispositivo.~dispositivos.aplicativosassociados.time
 
 	// Todo aplicativo pago tem uma conta com cartao
-	all a: AplicativoPago,  c: Conta, t: Time| a in c.aplicativosassociados.t => some c.cartoes
+	all aplicativoPago: AplicativoPago,  conta: Conta, time: Time | 
+	aplicativoPago in conta.aplicativosassociados.time => some conta.cartoes
 
 	// Todo Aplicativo estar na loja
-	all a: Aplicativo | a in Loja.aplicativos
+	all aplicativo: Aplicativo | aplicativo in Loja.aplicativos
 }
 
 fact Conta{
-	
-	// Em toda conta os aplicativos associados vao ser sempre adicionados, independente do tempo 
-	all t, t2: Time, c: Conta | #(c.aplicativosassociados.t) >=  #(c.aplicativosassociados.t2)
+
 	// Toda conta tem um usuario
-	all c: Conta | one c.~contas
+	all conta: Conta | one conta.~contas
 }
 
 fact Dispositivo{
 
-	all a: Aplicativo, d: Dispositivo, c: Conta, t, t2: Time | a in c.aplicativosassociados.t => a in Instalado.(d.apps).t2
 	// Todo dispositivo tem zero ou uma conta
 	all d: Dispositivo |  #(d.~dispositivos) <=1
 
@@ -98,26 +102,80 @@ fact traces {
 	init[first]
 	all pre: Time-last| let pos = pre.next|
  	some  c: Conta, d: Dispositivo, a: Aplicativo, s: Status|
-	instalarAplicativo[a,c,d,s, pre, pos] 
+	instalaAplicativo[a,c,d,s, pre, pos] or removeAplicativo[a,c,d,s, pre, pos] or atualizaAplicativo[a,c,d,s, pre, pos] 
 }
 
-assert nuncaDesinstalado {
-	some a: Aplicativo, d: Dispositivo, s: NaoInstalado, t: Time | a in s.(d.apps).t 
+-------------------------- FUNÇÕES --------------------------
+
+fun getAplicativosInstalados[s: Instalado, t: Time, d:Dispositivo] : set Aplicativo {
+ 	 s.(d.apps).t  & Aplicativo
 }
 
-check nuncaDesinstalado
+fun getAplicativos[loja:Loja] : set Aplicativo{
+	loja.aplicativos & Aplicativo
+}
 
+fun getContaDeUsuario[usu:Usuario] : set Conta {
+	usu.contas & Conta
+}
+
+fun getCartoesDeConta[conta: Conta] : set Cartao {
+	conta.cartoes & Cartao
+}
+
+fun getDispositivosDeUsuario[usu: Usuario]: set Dispositivo {
+	usu.contas.dispositivos & Dispositivo
+}
 
 -------------------------- PREDICADOS --------------------------
 
 pred init[t: Time]{
 
+no (Dispositivo.apps).t
+all c: Conta | no (c.aplicativosassociados).t
+
 }
 
-pred instalarAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: Status, antes, depois: Time ]{
+pred instalaAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: NaoInstalado, antes, depois: Time ]{
+	(a !in s.(d.apps).antes) and (a in c.aplicativosassociados.antes) =>
+	s.(d.apps).depois = s.(d.apps).antes + a
+}
+
+pred removeAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: Instalado, antes, depois: Time ]{
+	(a in s.(d.apps).antes) and (a in c.aplicativosassociados.antes) =>
+	(s.(d.apps).depois = s.(d.apps).antes - a) and (a in c.aplicativosassociados.depois)
+}
+
+pred atualizaAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: Instalado, antes, depois: Time ]{
+
+	(a in s.(d.apps).antes) and (a in c.aplicativosassociados.antes) and a.versao.antes = Antiga => a.versao.depois = Atual
+	or
+	(a in s.(d.apps).antes) and (a in c.aplicativosassociados.antes) and a.versao.antes = Atual => a.versao.depois = Antiga
 
 }
+
+-------------------------- ASSERT'S --------------------------
+
+assert noAppPagoSemCartao{
+	// Verifica se existe aplicativo pago associado a uma conta sem cartao
+	!some aplicativo: AplicativoPago, conta:Conta, time: Time
+	| aplicativo in conta.aplicativosassociados.time and no conta.cartoes
+}
+
+assert noLojaSemApp {
+	// Verifica se a loja tem aplicativo
+	!some loja: Loja | no loja.aplicativos
+}
+
+assert noRemoveAssociacao{
+	// Verifica que nenhum aplicativo vinculado a uma conta em um determinado tempo sera desvinculado depois
+	!some time1,time2:Time , conta:Conta, aplicativo:Aplicativo
+	| aplicativo in conta.aplicativosassociados.time1 and aplicativo !in conta.aplicativosassociados.time2 
+}
+
+check noRemoveAssociacao for 10
+check noLojaSemApp	for 10
+check noAppPagoSemCartao for 10
 
 pred show[]{}
-
-run show for 4 but exactly  3 Aplicativo
+run show for 7 but exactly 3 Conta
