@@ -106,7 +106,7 @@ fact traces {
 	init[first]
 	all pre: Time-last| let pos = pre.next|
  	some  c: Conta, d: Dispositivo, a: Aplicativo, s: Status|
-	instalaAplicativo[a,c,d,s, pre, pos] or removeAplicativo[a,c,d,s, pre, pos] or atualizaAplicativo[a,c,d,s, pre, pos] 
+	instalaAplicativo[a,c,d,s, pre, pos] and removeAplicativo[a,c,d,s, pre, pos] and atualizaAplicativo[a,c,d,s, pre, pos] 
 }
 
 -------------------------- FUNÇÕES --------------------------
@@ -183,4 +183,4 @@ check noLojaSemApp	for 10
 check noAppPagoSemCartao for 10
 
 pred show[]{}
-run show for 7 but exactly 3 Conta
+run show for 14 but exactly 3 Conta
