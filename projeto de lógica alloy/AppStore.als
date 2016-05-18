@@ -66,13 +66,16 @@ fact Aplicativo {
 
 	// Todo aplicativo pago tem uma conta com cartao
 	all aplicativoPago: AplicativoPago,  conta: Conta, time: Time | 
-	aplicativoPago in conta.aplicativosassociados.time => some conta.cartoes
+	aplicativoPago in  getAplicativosAssociados[conta,time] => some conta.cartoes
 
 	// Todo Aplicativo está na loja
 	all aplicativo: Aplicativo | aplicativo in Loja.aplicativos
 
 	// O status de todo aplicativo que está apenas ligado a Loja é Atual
-	all aplicativo: Aplicativo, conta: Conta, time: Time | !(aplicativo in  conta.aplicativosassociados.time) => aplicativo.versao.time = Atual
+	all aplicativo: Aplicativo, conta: Conta, time: Time | !(aplicativo in   getAplicativosAssociados[conta,time]) => aplicativo.versao.time = Atual
+
+	all aplicativo: Aplicativo, conta: Conta, time1: Time-last| let time2 = time1.next | aplicativo in conta.aplicativosassociados.time1 => aplicativo in conta.aplicativosassociados.time2
+	
 }
 
 fact Conta{
@@ -103,29 +106,21 @@ fact traces {
 	init[first]
 	all pre: Time-last| let pos = pre.next|
  	some  c: Conta, d: Dispositivo, a: Aplicativo, s: Status|
-	instalaAplicativo[a,c,d,s, pre, pos] or removeAplicativo[a,c,d,s, pre, pos] or atualizaAplicativo[a,c,d,s, pre, pos] 
+	instalaAplicativo[a,c,d,s, pre, pos] and removeAplicativo[a,c,d,s, pre, pos] and atualizaAplicativo[a,c,d,s, pre, pos] 
 }
 
 -------------------------- FUNÇÕES --------------------------
 
-fun getAplicativosInstalados[s: Instalado, t: Time, d:Dispositivo] : set Aplicativo {
- 	 s.(d.apps).t  & Aplicativo
+fun getAplicativosAssociados[c : Conta, t: Time] : set Aplicativo {
+        c.aplicativosassociados.t & Aplicativo
 }
 
-fun getAplicativos[loja:Loja] : set Aplicativo{
-	loja.aplicativos & Aplicativo
+fun getAplicativosStatus[s: Status, d: Dispositivo, time: Time] : set Aplicativo {
+		 s.(d.apps).time & Aplicativo
 }
 
-fun getContaDeUsuario[usu:Usuario] : set Conta {
-	usu.contas & Conta
-}
-
-fun getCartoesDeConta[conta: Conta] : set Cartao {
-	conta.cartoes & Cartao
-}
-
-fun getDispositivosDeUsuario[usu: Usuario]: set Dispositivo {
-	usu.contas.dispositivos & Dispositivo
+fun getVersaoAplicativo[a: Aplicativo, time: Time] : one VersaoDoApp {
+		a.versao.time
 }
 
 -------------------------- PREDICADOS --------------------------
@@ -133,35 +128,37 @@ fun getDispositivosDeUsuario[usu: Usuario]: set Dispositivo {
 pred init[t: Time]{
 
 no (Dispositivo.apps).t
-all c: Conta | no (c.aplicativosassociados).t
+all c: Conta | no getAplicativosAssociados[c,t]
 
 }
 
 pred instalaAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: NaoInstalado, antes, depois: Time ]{
-	(a !in s.(d.apps).antes) and (a in c.aplicativosassociados.antes) =>
-	s.(d.apps).depois = s.(d.apps).antes + a
+	(a !in getAplicativosStatus[s, d, antes])  =>
+	getAplicativosStatus[s, d, depois] = getAplicativosStatus[s, d, antes] + a
 }
 
 pred removeAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: Instalado, antes, depois: Time ]{
-	(a in s.(d.apps).antes) and (a in c.aplicativosassociados.antes) =>
-	(s.(d.apps).depois = s.(d.apps).antes - a) and (a in c.aplicativosassociados.depois)
+	(a in getAplicativosStatus[s, d, antes]) and (a in getAplicativosAssociados[c,antes]) =>
+	(getAplicativosStatus[s, d, depois] = getAplicativosStatus[s, d, antes] - a) and (a in getAplicativosAssociados[c,depois])
 }
+
+//c.aplicativosassociados.antes
 
 pred atualizaAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: Instalado, antes, depois: Time ]{
 
- (a in s.(d.apps).antes) and (a in c.aplicativosassociados.antes) and a.versao.antes = Antiga => a.versao.depois = Atual
+ (a in getAplicativosStatus[s, d, antes]) and (a in  getAplicativosAssociados[c,antes]) and getVersaoAplicativo[a, antes] = Antiga => getVersaoAplicativo[a, depois] = Atual
  
 }
 
 pred novaVersaoDisponivelAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: Instalado, antes, depois: Time ]{
-(a in s.(d.apps).antes) and (a in c.aplicativosassociados.antes) and a.versao.antes = Atual => a.versao.depois = Antiga
+(a in getAplicativosStatus[s, d, depois]) and (a in  getAplicativosAssociados[c,antes]) and  getVersaoAplicativo[a, antes] = Atual => getVersaoAplicativo[a, depois] = Antiga
 }
 -------------------------- ASSERT'S --------------------------
 
 assert noAppPagoSemCartao{
 	// Verifica se existe aplicativo pago associado a uma conta sem cartao
 	!some aplicativo: AplicativoPago, conta:Conta, time: Time
-	| aplicativo in conta.aplicativosassociados.time and no conta.cartoes
+	| aplicativo in  getAplicativosAssociados[conta,time] and no conta.cartoes
 }
 
 assert noLojaSemApp {
@@ -171,8 +168,8 @@ assert noLojaSemApp {
 
 assert noRemoveAssociacao{
 	// Verifica que nenhum aplicativo vinculado a uma conta em um determinado tempo sera desvinculado depois
-	!some time1,time2:Time , conta:Conta, aplicativo:Aplicativo
-	| aplicativo in conta.aplicativosassociados.time1 and aplicativo !in conta.aplicativosassociados.time2 
+	!some conta : Conta, aplicativo:Aplicativo,  time1: Time-last| let time2 = time1.next | 
+ aplicativo in  getAplicativosAssociados[conta,time1] and aplicativo !in  getAplicativosAssociados[conta,time2] 
 }
 
 check noRemoveAssociacao for 10
@@ -180,4 +177,4 @@ check noLojaSemApp	for 10
 check noAppPagoSemCartao for 10
 
 pred show[]{}
-run show for 7 but exactly 3 Conta
+run show for 10 but exactly 3 Conta
