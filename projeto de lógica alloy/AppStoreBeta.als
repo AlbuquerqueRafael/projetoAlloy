@@ -59,6 +59,11 @@ fact Loja{
 
 fact Aplicativo {
 
+	// Para todo aplicativo, se o aplicativo estiver instalado em um tempo 2 antes ele deve estar associado
+	all aplicativo: Aplicativo, conta: Conta, dispositivo: Dispositivo, instalado: Instalado, time1: Time-last-first| let time2 = time1.next | 
+  	aplicativo in instalado.(dispositivo.apps).time2 => aplicativo in conta.aplicativosassociados.time1
+
+
 	// Todo aplicativo no dispositivo o status é instalado e pertence a uma conta associada
 	all aplicativo: Aplicativo, dispositivo: Dispositivo, status: Status, time: Time | 
 	aplicativo in status.(dispositivo.apps).time => status = Instalado
