@@ -48,7 +48,7 @@ one sig Instalado, NaoInstalado extends Status{}
 
 
 fact Usuario {	
-	// Todo usuario estar na Loja
+	// Todo usuario está na Loja
 	all usuario: Usuario | usuario in Loja.usuarios
 }
 
@@ -71,10 +71,11 @@ fact Aplicativo {
 	// Todo Aplicativo está na loja
 	all aplicativo: Aplicativo | aplicativo in Loja.aplicativos
 
-	// O status de todo aplicativo que está apenas ligado a Loja é Atual
+	// A versão de todo aplicativo que está apenas ligado a Loja é Atual
 	all aplicativo: Aplicativo, conta: Conta, time: Time | !(aplicativo in   getAplicativosAssociados[conta,time]) => aplicativo.versao.time = Atual
 
-	all aplicativo: Aplicativo, conta: Conta, time1: Time-last| let time2 = time1.next | aplicativo in conta.aplicativosassociados.time1 => aplicativo in conta.aplicativosassociados.time2
+	all aplicativo: Aplicativo, conta: Conta, time1: Time-last| let time2 = time1.next | aplicativo in  getAplicativosAssociados[conta,time1] => aplicativo in getAplicativosAssociados[conta,time2]
+
 	
 }
 
@@ -83,8 +84,6 @@ fact Conta{
 	// Toda conta tem um usuario
 	all conta: Conta | one conta.~contas
 
-	
-	all conta: Conta | one conta.~contas
 }
 
 fact Dispositivo{
@@ -132,7 +131,7 @@ all c: Conta | no getAplicativosAssociados[c,t]
 
 }
 
-pred instalaAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: NaoInstalado, antes, depois: Time ]{
+pred instalaAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: Instalado, antes, depois: Time ]{
 	(a !in getAplicativosStatus[s, d, antes])  =>
 	getAplicativosStatus[s, d, depois] = getAplicativosStatus[s, d, antes] + a
 }
@@ -141,8 +140,6 @@ pred removeAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: Instalado, an
 	(a in getAplicativosStatus[s, d, antes]) and (a in getAplicativosAssociados[c,antes]) =>
 	(getAplicativosStatus[s, d, depois] = getAplicativosStatus[s, d, antes] - a) and (a in getAplicativosAssociados[c,depois])
 }
-
-//c.aplicativosassociados.antes
 
 pred atualizaAplicativo[a: Aplicativo , c: Conta, d: Dispositivo, s: Instalado, antes, depois: Time ]{
 
@@ -177,4 +174,5 @@ check noLojaSemApp	for 10
 check noAppPagoSemCartao for 10
 
 pred show[]{}
-run show for 10 but exactly 3 Conta
+run show for 10 but exactly 4 Conta
+
